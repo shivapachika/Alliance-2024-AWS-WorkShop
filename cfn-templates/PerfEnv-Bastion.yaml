@@ -1,0 +1,374 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  Bastion/Execution Server template for the Perf Environment. 
+Parameters:
+  AdminPassword:
+    Description: 'The password for the default administrative user, Administrator '
+    NoEcho: 'true'
+    Type: String
+    MinLength: '8'
+    MaxLength: '18'
+    ConstraintDescription: Please use a complex password.
+
+  BastionSize:
+    Description: ec2 instance size for the bastion host
+    Type: String
+    AllowedValues:
+      - t3.medium
+      - t3.small
+      - t3.large
+    Default: t3.small
+
+  VPC:
+    Description: VPC to place Bastion Host.
+    Type: 'AWS::EC2::VPC::Id'
+
+  PublicSubnet:
+    Description: Public Subnet to place Bastion Host.
+    Type: 'AWS::EC2::Subnet::Id'
+    
+  WindowsLastestAmiID:
+    Description: The latest AMI ID for Windows 2022 from Amazon
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base
+
+  BastionSecurityGroup:
+    Description: The existing security group that can be used to RDP to the EC2 instances
+    Type: String
+
+  BastionEBSVolumeSize:
+    Description: Specify the size of the EBS volume in GiB
+    Type: String
+    Default: 30
+
+Resources:
+  BastionServerRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: 'BastionServerRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+
+  BastionServerPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: 'BastionServerPolicy'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          -
+            Effect: Allow
+            Action:
+              - 'secretsmanager:DescribeSecret'
+              - 'secretsmanager:GetSecretValue'
+              - 'secretsmanager:ListSecrets'
+            Resource: !Sub 'arn:aws:secretsmanager:*:${AWS::AccountId}:secret:*'
+          -
+            Effect: Allow
+            Action: ec2:*
+            Resource: '*'
+          -
+            Effect: Allow
+            Action: ssm:*
+            Resource: '*'                
+      Roles:
+        - !Ref BastionServerRole
+
+  BastionServerInsProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      InstanceProfileName: 'BastionServerInsProfile'
+      Roles:
+        - !Ref BastionServerRole
+
+  Bastion:
+    Type: 'AWS::EC2::Instance'
+    Metadata:
+      'AWS::CloudFormation::Init':
+        configSets:
+          bastion_install:
+            - install_cfn
+            - install_apps
+        install_cfn:
+          files:
+            'c:\cfn\cfn-hup.conf':
+              content: !Join
+                - ''
+                - - |
+                    [main]
+                  - stack=
+                  - !Ref 'AWS::StackId'
+                  - |+
+
+                  - region=
+                  - !Ref 'AWS::Region'
+                  - |+
+
+            'c:\cfn\hooks.d\cfn-auto-reloader.conf':
+              content: !Join
+                - ''
+                - - |
+                    [cfn-auto-reloader-hook]
+                  - |
+                    triggers=post.update
+                  - |
+                    path=Resources.Bastion.Metadata.AWS::CloudFormation::Init
+                  - 'action=cfn-init.exe -v -s '
+                  - !Ref 'AWS::StackId'
+                  - ' -r Bastion'
+                  - ' --configsets bastion_install'
+                  - ' --region '
+                  - !Ref 'AWS::Region'
+                  - |+
+
+          services:
+            windows:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - 'c:\cfn\cfn-hup.conf'
+                  - 'c:\cfn\hooks.d\cfn-auto-reloader.conf'
+
+        install_apps:
+          files:
+            'c:\cfn\scripts\retry-command.ps1':
+              content: !Join
+                - ''
+                - - >-
+                    function Retry-Command {
+                      [CmdletBinding()]
+                      Param(
+                          [Parameter(Position=0, Mandatory=$true)]
+                          [scriptblock]$ScriptBlock,
+                          [Parameter(Position=1, Mandatory=$false)]
+                          [int]$Maximum = 5,
+                          [Parameter(Position=2, Mandatory=$false)]
+                          [int]$Delay = 100
+                      )
+                      Begin {
+                          $cnt = 0
+                      }
+                      Process {
+                          do {
+                              $cnt++
+                              try {
+                                  $ScriptBlock.Invoke()
+                                  return
+                              } catch {
+                                  Write-Error $_.Exception.InnerException.Message -ErrorAction Continue
+                                  Start-Sleep -Milliseconds $Delay
+                              }
+                          } while ($cnt -lt $Maximum)
+
+                          # Throw an error after $Maximum unsuccessful invocations. Doesn't need
+                          # a condition, since the function returns upon successful invocation.
+                          throw 'Execution failed.'
+                      }
+                    }
+
+            'c:\cfn\scripts\installchrome.ps1':
+              content: !Join
+                - ''
+                - - >-
+                    Import-module c:\cfn\scripts\retry-command.ps1 -Force
+
+                    Retry-Command -ScriptBlock {
+                      $Path = $env:TEMP; $Installer = "chrome_installer.exe";
+                      Invoke-WebRequest "http://dl.google.com/chrome/install/375.126/chrome_installer.exe" -OutFile $Path\$Installer;
+                      Start-Process -FilePath $Path\$Installer -Args "/silent /install" -Verb RunAs -Wait;
+                      Remove-Item $Path\$Installer
+                    }
+
+            'c:\cfn\scripts\installnpp.ps1':
+              content: !Join
+                - ''
+                - - >-
+                    Import-module c:\cfn\scripts\retry-command.ps1 -Force
+
+                    Retry-Command -ScriptBlock {
+                      $Path = $env:TEMP; $Installer = "npp_installer.exe";
+                      Invoke-WebRequest "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v7.9.5/npp.7.9.5.Installer.exe" -OutFile $Path\$Installer; 
+                      Start-Process -FilePath $Path\$Installer -Args "/S" -Verb RunAs -Wait;
+                      Remove-Item $Path\$Installer
+                    }
+
+            'c:\cfn\scripts\installputty.ps1':
+              content: !Join
+                - ''
+                - - >
+                    Import-module c:\cfn\scripts\retry-command.ps1 -Force
+
+                    Retry-Command -ScriptBlock {
+                      Invoke-WebRequest "https://the.earth.li/~sgtatham/putty/0.79/w64/putty-64bit-0.79-installer.msi" -OutFile c:\putty.msi; 
+                      Start-Process msiexec.exe -ArgumentList '/i c:\putty.msi /q' -Verb RunAs -Wait;
+                      Remove-Item c:\putty.msi;
+                      New-Item -ItemType SymbolicLink -Path 'C:\Users\Administrator\Desktop\' -name 'Putty' -Value 'C:\Program Files\PuTTY\putty.exe';
+                    }
+
+            'c:\cfn\scripts\installpython.ps1':
+              content: !Join
+                - ''
+                - - >
+                    Import-module c:\cfn\scripts\retry-command.ps1 -Force
+                    
+                    Retry-Command -ScriptBlock {                
+                      Invoke-WebRequest "https://www.python.org/ftp/python/3.9.2/python-3.9.2.exe" -OutFile c:\python.exe; 
+                      Start-Process c:\python.exe -ArgumentList '/quiet' -Verb RunAs -Wait; 
+                      Remove-Item c:\python.exe;
+                      [Environment]::SetEnvironmentVariable;("C:\Users\Administrator\AppData\Local\Programs\Python\Python37-32\",$env:Path, [System.EnvironmentVariableTarget]::Machine)
+                      [Environment]::SetEnvironmentVariable;("C:\Users\Administrator\AppData\Local\Programs\Python\Python37-32\Scripts\",$env:Path, [System.EnvironmentVariableTarget]::Machine)
+                      py.exe -m pip install --upgrade pip;
+                      py.exe -m pip install requests;
+                      py.exe -m pip install paramiko;
+                      py.exe -m pip install boto3;
+                    }
+            'c:\cfn\scripts\installawscliV2.ps1':
+              content: !Join
+                - ''
+                - - >
+                    Import-module c:\cfn\scripts\retry-command.ps1 -Force
+
+                    Retry-Command -ScriptBlock {
+                      $command = "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12"
+                      Invoke-Expression $command
+                      Invoke-WebRequest -Uri "https://awscli.amazonaws.com/AWSCLIV2.msi" -Outfile C:\AWSCLIV2.msi
+                      $arguments = "/i `"C:\AWSCLIV2.msi`" /qn"
+                      Start-Process msiexec.exe -ArgumentList $arguments -Wait
+                      Remove-Item C:\AWSCLIV2.msi;
+                    } 
+            'c:\cfn\scripts\getawsec2ssh.ps1':
+              content: !Join
+                - ''
+                - - >
+                    Import-module c:\cfn\scripts\retry-command.ps1 -Force
+
+                    Retry-Command -ScriptBlock {
+
+                    # Get the path to the PEM file
+
+                    $AWS_REGION = "us-east-1"
+
+                    $KEY_NAME = "EC2KeyPair"
+
+                    $KEY_PAIR_ID_COMMAND = "aws ec2 describe-key-pairs  --region `"$AWS_REGION`" --query `"KeyPairs[?KeyName=='$KEY_NAME'].KeyPairId`" --output text"
+
+                    # Evaluate the command and store the result in a variable
+
+                    $KEY_PAIR_ID = Invoke-Expression -Command $KEY_PAIR_ID_COMMAND
+
+
+                    # Set the SSM parameter name where the SSH private key is stored
+
+                    $PARAMETER_NAME = "/ec2/keypair/$KEY_PAIR_ID"
+
+
+                    # Set SSH folder path
+
+                    $folderPath = "C:\.ssh"
+
+                    New-Item -ItemType Directory -Path $folderPath -Force
+
+                    # Set the output file name for the .pem file
+
+                    $OUTPUT_FILE = "$folderPath\ssh_key.pem"
+
+                    # Retrieve the SSH private key from SSM Parameter Store
+
+                    $SSH_PRIVATE_KEY_COMMAND = "aws ssm get-parameter --region `"$AWS_REGION`" --name `"$PARAMETER_NAME`" --with-decryption --query `"Parameter.Value`" --output text"
+
+
+                    # Evaluate the command and store the result in a variable
+
+                    $SSH_PRIVATE_KEY = Invoke-Expression -Command $SSH_PRIVATE_KEY_COMMAND
+
+                    $SSH_PRIVATE_KEY | Out-File -FilePath $OUTPUT_FILE -Encoding Ascii
+                    }              
+          commands:
+            1-installchrome:
+              command: 'powershell.exe c:\cfn\scripts\installchrome.ps1'
+              waitAfterCompletion: '5'
+            2-installputty:
+              command: 'powershell.exe c:\cfn\scripts\installputty.ps1'
+              waitAfterCompletion: '5'
+            3-installpython:
+              command: 'powershell.exe c:\cfn\scripts\installpython.ps1'
+              waitAfterCompletion: '5'
+            4-installNotepadpp:
+              command: 'powershell.exe c:\cfn\scripts\installnpp.ps1'
+              waitAfterCompletion: '5'
+            5-desktopMSTSC:
+              command: >-
+                powershell.exe New-Item -ItemType SymbolicLink -Path
+                'C:\Users\Administrator\Desktop\' -name 'Microsoft Remote
+                Desktop Client' -Value 'C:\windows\system32\mstsc.exe'
+              waitAfterCompletion: '5'
+            6-installawscli:
+              command: 'powershell.exe c:\cfn\scripts\installawscliV2.ps1'
+              waitAfterCompletion: '5'
+            7-getawsec2ssh:
+              command: 'powershell.exe c:\cfn\scripts\getawsec2ssh.ps1'
+              waitAfterCompletion: '5'
+    Properties:
+      InstanceType: !Ref BastionSize
+      IamInstanceProfile: !Ref BastionServerInsProfile
+      ImageId: !Ref WindowsLastestAmiID
+      NetworkInterfaces:
+        - GroupSet:
+            - !Ref BastionSecurityGroup
+          AssociatePublicIpAddress: true
+          DeviceIndex: '0'
+          DeleteOnTermination: true
+          SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: Bastion
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              <powershell>
+                net user Administrator "${AdminPass}"
+                cfn-init.exe -v -s ${AWS::StackId} -r Bastion --region ${AWS::Region} --configsets bastion_install
+                
+                cfn-signal.exe -e %ERRORLEVEL% --stack ${AWS::StackId} --resource Bastion --region ${AWS::Region}
+              </powershell>
+            - AdminPass: !Ref AdminPassword
+
+  BastionEBSVolume:
+    Type: AWS::EC2::Volume
+    Properties:
+      Size: !Ref BastionEBSVolumeSize
+      AvailabilityZone: !GetAtt Bastion.AvailabilityZone
+      Tags:
+        - Key: Name
+          Value: BastionEBSVolume
+
+  AttachVolume:
+    DependsOn:
+      - BastionEBSVolume
+    Type: AWS::EC2::VolumeAttachment
+    Properties:
+      InstanceId: !Ref Bastion
+      VolumeId: !Ref BastionEBSVolume
+      Device: /dev/sdf  # Specify the device name for attachment
+            
+Outputs:
+  BastionPubIp:
+    Description: The Public IP to RDP to the Bastion. Please retrieve Administrator password of the
+      instance to be able to RDP
+    Value: !GetAtt Bastion.PublicIp
+  BastionPrivateIp:
+    Description: The Private IP of the Bastion within the VPC
+    Value: !Join [/, [!GetAtt Bastion.PrivateIp, '32']]
+    Export:
+      Name: 'BastionPrivateIp'

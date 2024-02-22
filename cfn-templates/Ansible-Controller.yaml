@@ -1,0 +1,319 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This template will build Ansible controller Node
+
+Parameters:
+  AnsibleInstanceType:
+    Description: Ansible EC2 instance type
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+    ConstraintDescription: must be a valid EC2 instance type.
+ 
+  AnsibleVPC:
+    Description: VPC to place Ansible controller.
+    Type: 'AWS::EC2::VPC::Id'
+  
+  AnsiblePrivateSubnet:
+    Description: Private Subnet to place Ansible controller.
+    Type: 'AWS::EC2::Subnet::Id'
+
+  AnsibleKeyPair:
+    Type: String
+    Description: Name of the existing Key Pair for EC2 instances
+    Default: EC2KeyPair
+
+  SourceCidrForSSH:
+    Description: The IP address that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+#mappings
+Mappings:
+  RegionMap:
+    us-east-1:
+      AmazonLinux2023AMI: ami-0a3c3a20c09d6f377
+    us-west-2:
+      AmazonLinux2023AMI: ami-040f9e8ab2841a9b3
+
+Resources:
+#create security groups
+  AnsibleSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref AnsibleVPC
+      GroupDescription: Enable SSH access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SourceCidrForSSH
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: AnsibleSSHSecurityGroup
+
+  AnsibleNodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ec2.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore'
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/CloudWatchAgentServerPolicy"
+
+  AnsibleNodeRolePolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      ManagedPolicyName: 'AnsibleNodeRolePolicy'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          -
+            Effect: Allow
+            Action:
+              - 'secretsmanager:DescribeSecret'
+              - 'secretsmanager:GetSecretValue'
+              - 'secretsmanager:ListSecrets'
+            Resource: !Sub 'arn:aws:secretsmanager:*:${AWS::AccountId}:secret:*'
+          -
+            Effect: Allow
+            Action: ec2:*
+            Resource: '*'
+          -
+            Effect: Allow
+            Action: ssm:*
+            Resource: '*'                
+      Roles:
+        - !Ref AnsibleNodeRole
+
+  AnsibleNodeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: [!Ref AnsibleNodeRole]
+
+  AnsibleLinux:
+    Type: AWS::EC2::Instance
+    Metadata:
+      'AWS::CloudFormation::Init':
+        configSets:
+          InstallAndRun:
+            - Install
+            - Configure
+        Install:
+          packages:
+            yum:
+              python3-pip: []
+          files:
+              /etc/cfn/cfn-hup.conf:
+                content: !Join 
+                  - ''
+                  - - |
+                      [main]
+                    - stack=
+                    - !Ref 'AWS::StackId'
+                    - |+
+
+                    - region=
+                    - !Ref 'AWS::Region'
+                    - |+
+
+                mode: '000400'
+                owner: root
+                group: root
+              /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+                content: !Join 
+                  - ''
+                  - - |
+                      [cfn-auto-reloader-hook]
+                    - |
+                      triggers=post.update
+                    - >
+                      path=Resources.WebServerInstance.Metadata.AWS::CloudFormation::Init
+                    - 'action=/opt/aws/bin/cfn-init -v '
+                    - '         --stack '
+                    - !Ref 'AWS::StackName'
+                    - '         --resource WebServerInstance '
+                    - '         --configsets InstallAndRun '
+                    - '         --region '
+                    - !Ref 'AWS::Region'
+                    - |+
+
+                    - |
+                      runas=root     
+              /opt/awscli/scripts/install-aws-cli:
+                content: !Sub |
+                  #!/bin/bash
+                  # Download and install AWS CLI v2 using curl, unzip, and sudo
+                  sudo yum install unzip
+                  curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+                  unzip awscliv2.zip
+                  sudo ./aws/install
+                mode: "000750"
+                owner: root
+                group: root
+              /home/ec2-user/scripts/setup-ansible:
+                content: !Sub |
+                  #!/bin/bash
+                  # Create the /etc/ansible/ directory if it doesn't exist
+                  sudo mkdir -p /etc/ansible
+                  sudo mkdir -p /opt/ansible/inventory
+
+                  # Change owner/group
+                  sudo chown -R ec2-user:ec2-user /etc/ansible
+                  sudo chown -R ec2-user:ec2-user /opt/ansible
+
+                  # Create the /etc/ansible/ansible.cfg file with AWS dynamic inventory configuration
+                  cat > /etc/ansible/ansible.cfg << EOL
+                  [inventory]
+                  enable_plugins = aws_ec2
+                  [defaults]
+                  inventory = /opt/ansible/inventory/aws_ec2.yaml
+                  remote_user = ec2-user
+                  private_key_file = /home/ec2-user/.ssh/ssh_key.pem
+                  host_key_checking = False
+                  EOL
+
+                  # Create the /opt/ansible/inventory/aws_ec2.yaml file with AWS dynamic inventory configuration
+                  cat > /opt/ansible/inventory/aws_ec2.yaml << EOL
+                  ---
+                  plugin: aws_ec2
+
+                  regions:
+                    - us-east-1
+
+                  keyed_groups: 
+                    - key: tags.Name
+                      prefix: tag_Name_
+                  EOL
+                mode: "000750"
+                owner: ec2-user
+                group: ec2-user
+              /home/ec2-user/scripts/get-ssh-key:
+                content: !Sub |
+                  #!/bin/bash
+                  AWS_REGION="${AWS::Region}"
+
+                  KEY_NAME="${AnsibleKeyPair}"
+
+                  KEY_PAIR_ID=$(aws ec2 describe-key-pairs  --region "$AWS_REGION" --query "KeyPairs[?KeyName=='$KEY_NAME'].KeyPairId" --output text)
+
+                  # Set the SSM parameter name where the SSH private key is stored
+                  PARAMETER_NAME="/ec2/keypair/$KEY_PAIR_ID"
+
+                  # Set the output file name for the .pem file
+                  OUTPUT_FILE="/home/ec2-user/.ssh/ssh_key.pem"
+
+                  # Retrieve the SSH private key from SSM Parameter Store
+                  SSH_PRIVATE_KEY=$(aws ssm get-parameter --region "$AWS_REGION" --name "$PARAMETER_NAME" --with-decryption --query "Parameter.Value" --output text)
+
+                  # Save the SSH private key to a .pem file
+                  echo "$SSH_PRIVATE_KEY" > "$OUTPUT_FILE"
+
+                  # Set the correct file permissions for the .pem file
+                  chmod 400 "$OUTPUT_FILE"
+                mode: "000750"
+                owner: ec2-user
+                group: ec2-user
+          services:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+        Configure:
+          commands:
+            01_install_ansible:
+              command: !Join
+                - ''
+                - - pip install ansible --quiet
+            02_install_pywinrm:
+              command: !Join
+                - ''
+                - - pip3 install "pywinrm>=0.3.0" --quiet      
+            03_install_boto3:
+              command: !Join
+                - ''
+                - - pip3 install "boto3" --quiet  
+            04_install_awscli:
+              command: /opt/awscli/scripts/install-aws-cli
+              ignoreErrors: true 
+            05_setup_ansible:
+              command: sudo -u ec2-user /home/ec2-user/scripts/setup-ansible
+              ignoreErrors: true 
+            06_get_sshkey:
+              command: sudo -u ec2-user /home/ec2-user/scripts/get-ssh-key
+              ignoreErrors: true
+    Properties:
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash -xe
+            - |
+              yum install -y aws-cfn-bootstrap
+            - |
+              # Install the files and packages from the metadata
+            - '/opt/aws/bin/cfn-init -v '
+            - '         --stack '
+            - !Ref 'AWS::StackName'
+            - '         --resource AnsibleLinux '
+            - '         --configsets InstallAndRun '
+            - '         --region '
+            - !Ref 'AWS::Region'
+            - |+
+
+            - |
+              # Signal the status from cfn-init
+            - '/opt/aws/bin/cfn-signal -e $? '
+            - '         --stack '
+            - !Ref 'AWS::StackName'
+            - '         --resource AnsibleLinux '
+            - '         --region '
+            - !Ref 'AWS::Region'
+            - |+
+      InstanceType: !Ref AnsibleInstanceType
+      KeyName: !Ref AnsibleKeyPair
+      IamInstanceProfile: !Ref AnsibleNodeInstanceProfile
+      ImageId: !FindInMap 
+        - RegionMap
+        - !Ref 'AWS::Region'
+        - AmazonLinux2023AMI
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          AssociatePublicIpAddress: false
+          SubnetId: !Ref AnsiblePrivateSubnet
+          GroupSet:
+            - !Ref AnsibleSecurityGroup
+      Tags:
+        - Key: Name
+          Value: AnsibleNode
+
+Outputs:
+  AnsibleNodePrivateIp:
+    Description: The Private IP Address of the Ansible Node within the VPC
+    Value: !GetAtt AnsibleLinux.PrivateIp
+  AnsiblePrivateIpCIDR:
+    Description: The Private IP CIDR of the Ansible Node within the VPC
+    Value: !Join [/, [!GetAtt AnsibleLinux.PrivateIp, '32']]
+    Export:
+      Name: 'AnsiblePrivateIpCIDR'

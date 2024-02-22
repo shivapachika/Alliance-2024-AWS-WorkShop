@@ -1,0 +1,249 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This template will build VPC, supporting resources, a basic networking structure, and some Security groups for use in later tasks.
+
+Parameters:
+  VPCCIDR:
+    Description: CIDR Block for VPC
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedValues:
+      - 10.0.0.0/16
+
+  PublicSubnet1Param:
+    Description: Public Subnet 1
+    Type: String
+    Default: 10.0.0.0/24
+    AllowedValues:
+      - 10.0.0.0/24
+
+  ToolsSubnet1Param:
+    Description: Tools Subnet 1
+    Type: String
+    Default: 10.0.2.0/24
+    AllowedValues:
+      - 10.0.2.0/24
+
+  AppSubnet1Param:
+    Description: App Subnet 1
+    Type: String
+    Default: 10.0.4.0/24
+    AllowedValues:
+      - 10.0.4.0/24
+
+  KeyPairName:
+    Type: String
+    Description: Name of the Key Pair to create for EC2 instances
+    Default: EC2KeyPair
+
+  SourceCidrForBastion:
+    Description: >-
+      IP Cidr from which you are likely to RDP/SSH into the instances. You can add
+      rules later by modifying the created security groups e.g. 54.32.98.160/32
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: '^([0-9]+\.){3}[0-9]+\/[0-9]+$'
+
+Resources:
+###########
+# VPC and Network Structure
+###########
+  LabVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsSupport: True
+      EnableDnsHostnames: True
+      InstanceTenancy: 'default'
+      Tags:
+        - Key: Name
+          Value: LabVPC
+
+  LabInternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: LabInternetGateway
+
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref LabVPC
+      InternetGatewayId: !Ref LabInternetGateway
+
+#NATs
+  NATGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ElasticIPAddress1.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: NATGateway1
+
+  ElasticIPAddress1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+#Subnets
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref PublicSubnet1Param
+      MapPublicIpOnLaunch: True
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: PublicSubnet1
+
+  ToolsSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref ToolsSubnet1Param
+      MapPublicIpOnLaunch: False
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: ToolsSubnet1
+
+  AppSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref AppSubnet1Param
+      MapPublicIpOnLaunch: False
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs ''
+      Tags:
+        - Key: Name
+          Value: AppSubnet1
+
+#Routing
+#Route Tables
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref LabVPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  PrivateRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref LabVPC
+      Tags:
+        - Key: Name
+          Value: PrivateRouteTable
+
+#Routes
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: 
+      - LabInternetGateway
+      - AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref LabInternetGateway
+
+  PrivateRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway1
+
+#Subnet Associations
+  PublicSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  ToolsSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref ToolsSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  AppSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref AppSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+# EC2 KeyPair
+  MyKeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Ref KeyPairName
+      KeyFormat: pem
+      KeyType: rsa
+
+# Security Groups
+  BastionSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable RDP or SSH access
+      VpcId: !Ref LabVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+          CidrIp: !Ref SourceCidrForBastion
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: !Ref SourceCidrForBastion
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: BastionHostecurityGroup
+
+#Outputs
+Outputs:
+  VPC:
+    Description: The VPC ID to use for the resources in the Perf Environment
+    Value: !Ref LabVPC
+    Export:
+      Name: 'VPC'
+  PublicSubnet:
+    Description: The subnet ID to use for public servers in the Perf Environment
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: 'PublicSubnet'
+  ToolsPrivateSubnet:
+    Description: The subnet ID to use for private servers in the Perf Environment
+    Value: !Ref ToolsSubnet1
+    Export:
+      Name: 'ToolsPrivateSubnet'
+  AppPrivateSubnet:
+    Description: The subnet ID to use for private servers in the Perf Environment
+    Value: !Ref AppSubnet1
+    Export:
+      Name: 'AppPrivateSubnet'
+  SSHKeyName:
+    Description: The EC2 SSH keyname in the Environment
+    Value: !Ref MyKeyPair
+    Export:
+      Name: 'SSHKeyName'
+  BastionSecurityGroup:
+    Description: The EC2 RDP/SSH SecurityGroup in the Environment
+    Value: !Ref BastionSecurityGroup
+    Export:
+      Name: 'BastionHostSecurityGroup'

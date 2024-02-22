@@ -1,0 +1,226 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'PerfTest environment with Bastion host, Ansible Controller Node and VPC'
+
+Metadata:
+  QuickStartDocumentation:
+    EntrypointName: "Launch into a new VPC"
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: CloudFormation templates location
+        Parameters:
+          - CfnS3Bucket
+          - CfnS3Path
+      - Label:
+          default: Bastion host provisioning
+        Parameters:
+          - AdminPassword
+          - SourceCidrForRDP
+      - Label:
+          default: Network setup
+        Parameters:
+          - VPCCIDR
+          - PublicSubnet1Param
+          - ToolsSubnet1Param
+          - AppSubnet1Param
+      - Label:
+          default: Ansible nodes
+        Parameters:
+          - EC2ModelAnsible
+          - KeyPairName
+      - Label:
+          default: Jmeter nodes
+        Parameters:
+          - EC2ModelJmeterLinux
+          - EC2ModelJmeterWindows
+          - KeyPairName
+
+Parameters:
+  CfnS3Bucket:
+    Description: S3 Bucket with CFN template files
+    Type: String
+    Default: <CloudFormation template S3 bucket name>
+
+  CfnS3Path:
+    Description: S3 Path with CFN template files
+    Type: String
+    Default: cfn-templates
+
+  AdminPassword:
+    Description: 'The password for the default administrative user, Administrator '
+    NoEcho: 'true'
+    Type: String
+    MinLength: '8'
+    MaxLength: '18'
+    ConstraintDescription: Please use a complex password.
+
+  VPCCIDR:
+    Description: CIDR Block for VPC
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedValues:
+      - 10.0.0.0/16
+
+  PublicSubnet1Param:
+    Description: Public Subnet 1
+    Type: String
+    Default: 10.0.0.0/24
+    AllowedValues:
+      - 10.0.0.0/24
+
+  ToolsSubnet1Param:
+    Description: Tools Subnet 1
+    Type: String
+    Default: 10.0.2.0/24
+    AllowedValues:
+      - 10.0.2.0/24
+
+  AppSubnet1Param:
+    Description: App Subnet 1
+    Type: String
+    Default: 10.0.4.0/24
+    AllowedValues:
+      - 10.0.4.0/24
+
+  EC2ModelAnsible:
+    Description: Model of EC2 Servers in the source environment - Ansible Linux
+    Type: String
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+    Default: t3.micro
+
+  KeyPairName:
+    Type: String
+    Description: Name of the Key Pair to create for EC2 instances
+    Default: EC2KeyPair
+
+  EC2ModelJmeterLinux:
+    Description: Model of EC2 Servers in the source environment - Jmeter
+    Type: String
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+    Default: t3.small
+
+  EC2ModelJmeterWindows:
+    Description: Model of EC2 Servers in the source environment - Jmeter
+    Type: String
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+    Default: t3.medium
+
+  SourceCidrForBastion:
+    Description: >-
+      IP Cidr from which you are likely to RDP into the instances. You can add
+      rules later by modifying the created security groups e.g. 54.32.98.160/32
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: '^([0-9]+\.){3}[0-9]+\/[0-9]+$'
+
+#Resources
+Resources:
+  VPCStack:
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub https://${CfnS3Bucket}.s3.amazonaws.com/${CfnS3Path}/PerfEnv-VPC.yaml
+      Parameters:
+        VPCCIDR: !Ref VPCCIDR
+        PublicSubnet1Param: !Ref PublicSubnet1Param
+        ToolsSubnet1Param: !Ref ToolsSubnet1Param
+        AppSubnet1Param: !Ref AppSubnet1Param
+        KeyPairName: !Ref KeyPairName
+        SourceCidrForBastion: !Ref SourceCidrForBastion
+
+  BastionStack:
+    DependsOn: VPCStack
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub https://${CfnS3Bucket}.s3.amazonaws.com/${CfnS3Path}/PerfEnv-Bastion.yaml
+      Parameters:
+        AdminPassword: !Ref AdminPassword
+        VPC: !GetAtt 
+          - VPCStack
+          - Outputs.VPC
+        PublicSubnet: !GetAtt 
+          - VPCStack
+          - Outputs.PublicSubnet
+        BastionSecurityGroup: !GetAtt 
+          - VPCStack
+          - Outputs.BastionSecurityGroup
+
+  AnsibleStack:
+    DependsOn: 
+      - VPCStack
+      - BastionStack
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub https://${CfnS3Bucket}.s3.amazonaws.com/${CfnS3Path}/Ansible-Controller.yaml
+      Parameters:
+        AnsibleInstanceType: !Ref EC2ModelAnsible
+        SourceCidrForSSH: !GetAtt
+          - BastionStack
+          - Outputs.BastionPrivateIp
+        AnsibleVPC: !GetAtt 
+          - VPCStack
+          - Outputs.VPC
+        AnsiblePrivateSubnet: !GetAtt 
+          - VPCStack
+          - Outputs.ToolsPrivateSubnet
+        AnsibleKeyPair: !GetAtt 
+          - VPCStack
+          - Outputs.SSHKeyName
+
+  JmeterStack:
+    DependsOn:
+      - VPCStack
+      - BastionStack
+      - AnsibleStack
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub https://${CfnS3Bucket}.s3.amazonaws.com/${CfnS3Path}/Jmeter-Stack.yaml
+      Parameters:
+        JmeterWorkerInstanceType: !Ref EC2ModelJmeterLinux
+        JmeterControllerInstanceType: !Ref EC2ModelJmeterWindows
+        SourceCidrForSSH: !GetAtt
+          - BastionStack
+          - Outputs.BastionPrivateIp
+        SourceCidrForRDP: !GetAtt
+          - BastionStack
+          - Outputs.BastionPrivateIp
+        JmeterVPC: !GetAtt 
+          - VPCStack
+          - Outputs.VPC
+        JmeterPrivateSubnet: !GetAtt 
+          - VPCStack
+          - Outputs.AppPrivateSubnet
+        JmeterKeyPair: !GetAtt 
+          - VPCStack
+          - Outputs.SSHKeyName
+        SourceCidrForAnsible: !GetAtt 
+          - AnsibleStack
+          - Outputs.AnsiblePrivateIpCIDR
+
+#Outputs
+Outputs:
+  AWSAccountId:
+    Value: !Ref AWS::AccountId
+  BastionIP:
+    Description: Bastion node IP (use as a jumpbox to connect to the nodes).
+    Value: !GetAtt 'BastionStack.Outputs.BastionPubIp'
+  AnsibleIP:
+    Description: Ansible controller node IP.
+    Value: !GetAtt 'AnsibleStack.Outputs.AnsibleNodePrivateIp'
+  JmeterControlNodeIP:
+    Description: Jmeter controller node IP.
+    Value: !GetAtt 'JmeterStack.Outputs.JmeterControllerNodePrivateIp'
+  JmeterWorkerNodeIPs:
+    Description: Jmeter worker node IPs.
+    Value: !GetAtt 'JmeterStack.Outputs.JmeterWorkerNodePrivateIps'

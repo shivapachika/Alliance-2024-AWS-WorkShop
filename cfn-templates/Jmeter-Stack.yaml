@@ -1,0 +1,269 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This template will build Jmeter controller and worker nodes
+
+Parameters:
+  JmeterWorkerInstanceType:
+    Description: Jmeter EC2 instance type
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+    ConstraintDescription: must be a valid EC2 instance type.
+ 
+  JmeterControllerInstanceType:
+    Description: Jmeter EC2 instance type
+    Type: String
+    Default: t3.medium
+    AllowedValues:
+      - t3.nano
+      - t3.micro
+      - t3.small
+      - t3.medium
+      - t3.large
+    ConstraintDescription: must be a valid EC2 instance type.
+
+  JmeterVPC:
+    Description: VPC to place Jmeter instances.
+    Type: 'AWS::EC2::VPC::Id'
+  
+  JmeterPrivateSubnet:
+    Description: Private Subnet to place Jmeter instances.
+    Type: 'AWS::EC2::Subnet::Id'
+
+  JmeterKeyPair:
+    Type: String
+    Description: Name of the existing Key Pair for EC2 instances
+    Default: EC2KeyPair
+
+  SourceCidrForAnsible:
+    Description: The Ansible Node IP address that can be used to Manage this EC2 instance
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  SourceCidrForSSH:
+    Description: The IP address that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  SourceCidrForRDP:
+    Description: The IP address that can be used to RDP to the EC2 instances
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  WindowsLastestAmiID:
+    Description: The latest AMI ID for Windows 2022 from Amazon
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base
+
+  JmeterWorkerNodeMax:
+    Description: Maximum number of jmeter worker nodes
+    Default: 6
+    Type: Number
+
+  JmeterWorkerNodeMin:
+    Default: 3
+    Description: Minimum number of jmeter worker nodes
+    Type: Number
+
+#mappings
+Mappings:
+  RegionMap:
+    us-east-1:
+      AmazonLinux2023AMI: ami-08a52ddb321b32a8c
+    us-west-2:
+      AmazonLinux2023AMI: ami-052c9ea013e6e3567
+
+Resources:
+#create security groups
+  JmeterSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref JmeterVPC
+      GroupDescription: Enable SSH and RDP access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SourceCidrForSSH
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SourceCidrForAnsible
+        - IpProtocol: tcp
+          FromPort: '3389'
+          ToPort: '3389'
+          CidrIp: !Ref SourceCidrForRDP
+        - IpProtocol: icmp
+          FromPort: 8
+          ToPort: -1
+          CidrIp: 10.0.0.0/16
+      Tags:
+        - Key: Name
+          Value: JmeterSecurityGroup
+
+  JmeterWindows:
+    Type: AWS::EC2::Instance
+    Metadata:
+      'AWS::CloudFormation::Init':
+        config:
+          files:
+            c:\cfn\cfn-hup.conf:
+              content:
+                Fn::Join:
+                  - ''
+                  - - |
+                      [main]
+                    - stack=
+                    - Ref: AWS::StackId
+                    - |+
+
+                    - region=
+                    - Ref: AWS::Region
+                    - |+
+
+            c:\cfn\hooks.d\cfn-auto-reloader.conf:
+              content:
+                Fn::Join:
+                  - ''
+                  - - |
+                      [cfn-auto-reloader-hook]
+                    - |
+                      triggers=post.update
+                    - >
+                      path=Resources.SharePointFoundation.Metadata.AWS::CloudFormation::Init
+                    - 'action=cfn-init.exe -v -s '
+                    - Ref: AWS::StackId
+                    - ' -r JmeterWindows'
+                    - ' --region '
+                    - Ref: AWS::Region
+                    - |+
+
+            c:\cfn\scripts\enablewinrm.ps1:
+              content: !Join
+                - ''
+                - - |
+                    winrm quickconfig -quiet
+                    Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true
+                    Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $true
+
+            c:\temp\gitsilentinstall-defaults.txt:
+              content: !Join
+                - ''
+                - - |
+                    [Setup]
+                    Lang=default
+                    Dir=C:\Program Files\Git
+                    Group=Git
+                    NoIcons=0
+                    SetupType=default
+                    Components=ext,ext\reg,ext\reg\shellhere,assoc_sh
+                    Tasks=
+                    PathOption=Cmd
+                    SSHOption=OpenSSH
+                    CRLFOption=CRLFAlways
+            
+            c:\temp\git.exe:
+              source: https://github.com/git-for-windows/git/releases/download/v2.42.0.windows.1/Git-2.42.0-64-bit.exe
+
+          commands:
+            1-installgit:
+              command: >-
+                C:\temp\Git.exe /SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOADINF="c:\temp\gitsilentinstall-defaults.txt"
+            2-enablewinrm:
+              command: 'powershell.exe c:\cfn\scripts\enablewinrm.ps1'
+          services:
+            windows:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - c:\cfn\cfn-hup.conf
+                  - c:\cfn\hooks.d\cfn-auto-reloader.conf
+    Properties:
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+            - ''
+            - - |
+                <script>
+              - 'cfn-init.exe -v -s '
+              - Ref: AWS::StackId
+              - ' -r JmeterWindows'
+              - ' --region '
+              - Ref: AWS::Region
+              - |+
+
+              - 'cfn-signal.exe -e %ERRORLEVEL% '
+              - |+
+
+              - </script>
+      InstanceType:
+        Ref: JmeterControllerInstanceType
+#      IamInstanceProfile: !Ref EC2InstanceIAMProfileName
+      KeyName:
+        Ref: JmeterKeyPair
+      ImageId:
+        Ref: WindowsLastestAmiID
+      NetworkInterfaces:
+        - DeviceIndex: '0'
+          SubnetId: !Ref JmeterPrivateSubnet
+          GroupSet:
+            - !Ref JmeterSecurityGroup
+      Tags:
+        - Key: Name
+          Value: JmeterControllerNode
+
+  # Jmeter worker node config
+  JmeterWorkerNodeGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: !Ref JmeterWorkerNodeMin
+      LaunchConfigurationName: !Ref JmeterWorkerNodeLaunchConfig
+      MinSize: !Ref JmeterWorkerNodeMin
+      MaxSize: !Ref JmeterWorkerNodeMax
+      VPCZoneIdentifier: !Ref JmeterPrivateSubnet
+      Tags:
+        - Key: Name
+          Value: JmeterWorkerNodeGroup
+          PropagateAtLaunch: true
+
+  JmeterWorkerNodeLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: false
+      InstanceType: !Ref JmeterWorkerInstanceType
+      KeyName: !Ref JmeterKeyPair
+      ImageId: !FindInMap 
+        - RegionMap
+        - !Ref 'AWS::Region'
+        - AmazonLinux2023AMI
+      SecurityGroups: !Ref JmeterSecurityGroup
+      Tags:
+        - Key: Name
+          Value: JmeterWorkerLinuxNode
+
+
+Outputs:
+  JmeterControllerNodePrivateIp:
+    Description: The Private IP of the Jmeter Controller Node within the VPC
+    Value: !GetAtt JmeterWindows.PrivateIp
+  JmeterWorkerNodePrivateIps:
+    Description: The Private IPs of the Jmeter Worker Nodes within the VPC
+    Value: !GetAtt JmeterWorkerNodeGroup.PrivateIpAddresses
