@@ -1,0 +1,6 @@
+REM This is the file run_jmeter.bat,
+REM it will be sourced in by jmeter
+
+REM redirect log files for each user
+cd {{ win_jmeter_path }}\apache-jmeter-{{ jmeter_version }}\bin
+jmeter.bat -j %userprofile%\documents\jmeter.log

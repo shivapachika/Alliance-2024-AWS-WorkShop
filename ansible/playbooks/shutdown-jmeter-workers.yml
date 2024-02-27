@@ -1,0 +1,20 @@
+- hosts: jmeterworker
+  become: true
+  tasks:
+    - name: Check ProcessID of running jmeter-server
+      shell: |
+        source /etc/profile.d/jmeter.sh
+        ps -efj | grep jmeter-server | head -1 | grep -v grep
+      register: jmeterserver
+
+    - name: Get SessionID from ProcessID
+      set_fact:
+        jmeterSID: "{{ jmeterserver.stdout.split()[4] }}"
+
+    - name: Show SessionID
+      debug: var=jmeterSID
+
+    - name: Killing SessionID
+      shell: |
+        echo "SessionID: {{ jmeterSID }}"
+        pkill -s {{ jmeterSID }}

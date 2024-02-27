@@ -1,6 +1,8 @@
 AWSTemplateFormatVersion: 2010-09-09
+
 Description: >-
-  Bastion/Execution Server template for the Perf Environment. 
+  Bastion/Execution Server template for the Perf Environment.
+
 Parameters:
   AdminPassword:
     Description: 'The password for the default administrative user, Administrator '
@@ -35,11 +37,6 @@ Parameters:
   BastionSecurityGroup:
     Description: The existing security group that can be used to RDP to the EC2 instances
     Type: String
-
-  BastionEBSVolumeSize:
-    Description: Specify the size of the EBS volume in GiB
-    Type: String
-    Default: 30
 
 Resources:
   BastionServerRole:
@@ -247,52 +244,31 @@ Resources:
                       Remove-Item C:\AWSCLIV2.msi;
                     } 
             'c:\cfn\scripts\getawsec2ssh.ps1':
-              content: !Join
-                - ''
-                - - >
-                    Import-module c:\cfn\scripts\retry-command.ps1 -Force
-
-                    Retry-Command -ScriptBlock {
-
+              content: !Sub |
                     # Get the path to the PEM file
-
                     $AWS_REGION = "us-east-1"
-
                     $KEY_NAME = "EC2KeyPair"
-
                     $KEY_PAIR_ID_COMMAND = "aws ec2 describe-key-pairs  --region `"$AWS_REGION`" --query `"KeyPairs[?KeyName=='$KEY_NAME'].KeyPairId`" --output text"
 
                     # Evaluate the command and store the result in a variable
-
                     $KEY_PAIR_ID = Invoke-Expression -Command $KEY_PAIR_ID_COMMAND
 
-
                     # Set the SSM parameter name where the SSH private key is stored
-
                     $PARAMETER_NAME = "/ec2/keypair/$KEY_PAIR_ID"
 
-
                     # Set SSH folder path
-
                     $folderPath = "C:\.ssh"
 
                     New-Item -ItemType Directory -Path $folderPath -Force
-
                     # Set the output file name for the .pem file
-
                     $OUTPUT_FILE = "$folderPath\ssh_key.pem"
 
                     # Retrieve the SSH private key from SSM Parameter Store
-
                     $SSH_PRIVATE_KEY_COMMAND = "aws ssm get-parameter --region `"$AWS_REGION`" --name `"$PARAMETER_NAME`" --with-decryption --query `"Parameter.Value`" --output text"
 
-
                     # Evaluate the command and store the result in a variable
-
                     $SSH_PRIVATE_KEY = Invoke-Expression -Command $SSH_PRIVATE_KEY_COMMAND
-
-                    $SSH_PRIVATE_KEY | Out-File -FilePath $OUTPUT_FILE -Encoding Ascii
-                    }              
+                    $SSH_PRIVATE_KEY | Out-File -FilePath $OUTPUT_FILE -Encoding Ascii       
           commands:
             1-installchrome:
               command: 'powershell.exe c:\cfn\scripts\installchrome.ps1'
@@ -343,24 +319,6 @@ Resources:
                 cfn-signal.exe -e %ERRORLEVEL% --stack ${AWS::StackId} --resource Bastion --region ${AWS::Region}
               </powershell>
             - AdminPass: !Ref AdminPassword
-
-  BastionEBSVolume:
-    Type: AWS::EC2::Volume
-    Properties:
-      Size: !Ref BastionEBSVolumeSize
-      AvailabilityZone: !GetAtt Bastion.AvailabilityZone
-      Tags:
-        - Key: Name
-          Value: BastionEBSVolume
-
-  AttachVolume:
-    DependsOn:
-      - BastionEBSVolume
-    Type: AWS::EC2::VolumeAttachment
-    Properties:
-      InstanceId: !Ref Bastion
-      VolumeId: !Ref BastionEBSVolume
-      Device: /dev/sdf  # Specify the device name for attachment
             
 Outputs:
   BastionPubIp:

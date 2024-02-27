@@ -1,0 +1,7 @@
+REM This is the file bin/setenv.bat,
+REM it will be sourced in by bin/jmeter
+
+REM Use a bigger heap, but a smaller metaspace, than the default
+SET HEAP={{ win_jmeter_heap_settings }}
+SET JAVA_HOME="{{ win_java_folder }}\jdk-{{ java_full_version }}"
+SET PATH=%JAVA_HOME%\bin;%PATH%

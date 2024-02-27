@@ -16,7 +16,7 @@ Metadata:
           default: Bastion host provisioning
         Parameters:
           - AdminPassword
-          - SourceCidrForRDP
+          - SourceCidrForBastion
       - Label:
           default: Network setup
         Parameters:
@@ -221,6 +221,3 @@ Outputs:
   JmeterControlNodeIP:
     Description: Jmeter controller node IP.
     Value: !GetAtt 'JmeterStack.Outputs.JmeterControllerNodePrivateIp'
-  JmeterWorkerNodeIPs:
-    Description: Jmeter worker node IPs.
-    Value: !GetAtt 'JmeterStack.Outputs.JmeterWorkerNodePrivateIps'

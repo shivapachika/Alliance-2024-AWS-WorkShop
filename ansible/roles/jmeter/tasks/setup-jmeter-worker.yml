@@ -1,0 +1,166 @@
+- name: Mkdir for temp folder
+  file:
+    path: '{{ java_tmp_folder }}'
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Mkdir for java installation
+  file:
+    path: '{{ java_folder }}'
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Download {{ java_package }}
+  get_url:
+    url: '{{ java_binaries_url }}'
+    dest: '{{ java_tmp_folder }}'
+
+- name: Install java {{ java_full_version }}
+  unarchive:
+    src: '{{ java_tmp_folder }}/{{ java_package }}'
+    dest: '{{ java_folder }}'
+    remote_src: true
+    owner: root
+    group: root
+    mode: 0755
+    extra_opts: [--strip-components=1]
+    creates: '{{ java_path }}/{{ java_folder }}/bin/'
+
+- name: Make dirs for jmeter
+  file:
+    path: '{{ jmeter_path }}'
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Make dirs for jmeter report path
+  file:
+    path: '{{ jmeter_report_path }}'
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Make dirs for jmeter logs
+  file:
+    path: '{{ jmeter_logs }}'
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Make dirs for jmeter userdata
+  file:
+    path: '{{ jmeter_userdata }}'
+    state: directory
+    owner: ec2-user
+    group: ec2-user
+    mode: 0755
+
+- name: Make dirs for jmeter plugins
+  file:
+    path: '{{ jmeter_plugins }}'
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Download apache-jmeter-{{ jmeter_version }}.tgz
+  get_url:
+    url: '{{ jmeter_binaries_url }}/{{ jmeter_package }}'
+    dest: '{{ jmeter_tmp_folder }}/{{ jmeter_package }}'
+    checksum: 'sha512:{{ jmeter_checksum }}'
+  register: jmeter_artifact
+
+- name: Install apache-jmeter-{{ jmeter_version }}
+  unarchive:
+    src: '{{ jmeter_artifact.dest }}'
+    dest: '{{ jmeter_path }}/'
+    remote_src: true
+    owner: root
+    group: root
+    mode: 0755
+    extra_opts: [--strip-components=1]
+    creates: '{{ jmeter_path }}/bin/'
+
+- name: Set configuration properties
+  ini_file:
+    path: '{{ jmeter_path }}/bin/{{ jm_config_item.0.name }}.properties'
+    section: null
+    option: '{{ jm_config_item.1.key }}'
+    value: '{{ jm_config_item.1.value }}'
+    no_extra_spaces: true
+    backup: true
+  loop: >-
+    {{ query( 'subelements', jmeter_config_properties,
+              'properties',
+              {'skip_missing': true}
+            )
+    }}
+  loop_control:
+    loop_var: jm_config_item
+
+- name: Put jmeter setenv file
+  template:
+    src: templates/setenv.sh.j2
+    dest: '{{ jmeter_path }}/bin/setenv.sh'
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Put jmeter profile
+  template:
+    src: templates/jmeter.sh.j2
+    dest: /etc/profile.d/jmeter.sh
+    owner: root
+    group: root
+    mode: 0555
+
+- name: Update jmeter alternatives
+  alternatives:
+    name: '{{ jm_item }}'
+    path: '{{ jmeter_path }}/bin/{{ jm_item }}'
+    link: '/usr/bin/{{ jm_item }}'
+    priority: 100
+  loop:
+    - jmeter
+    - jmeter-server
+  loop_control:
+    loop_var: jm_item
+
+- set_fact:
+    ipAddr: "{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}"
+
+- name: Update RMI_HOST_DEF in jmeter-server file
+  replace:
+    backup: yes
+    path: '{{ jmeter_path }}/bin/jmeter-server'
+    regexp: '^#(RMI_HOST_DEF=-Djava[.]rmi[.]server[.]hostname=).*'
+    replace: '\g<1>{{ ipAddr }}'
+
+- name: Start jmeter-server
+  shell: |
+    source /etc/profile.d/jmeter.sh
+    cd {{ jmeter_path }}/bin
+    nohup jmeter-server > {{ jmeter_logs }}/jmeter-server.log 2> {{ jmeter_logs }}/jmeter-server.err &
+  tags: start
+
+- pause:
+    seconds: 5
+  tags: start
+
+- name: Read jmeter-server output log
+  slurp:
+    src: '{{ jmeter_path }}/bin/jmeter-server.log'
+  register: outputlog
+  tags: start
+
+- name: Show output log
+  debug:
+    msg: "{{ outputlog['content'] | b64decode | split('\n') }}"
+  tags: start
