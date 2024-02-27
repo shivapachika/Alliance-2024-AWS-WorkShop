@@ -47,6 +47,11 @@ Parameters:
     Type: String
     Description: The deployment automation repository branch to pull from.
 
+  AnsibleVaultPassword:
+    Type: String 
+    Description: Password for Ansible vault
+    NoEcho: true
+
 #mappings
 Mappings:
   RegionMap:
@@ -74,6 +79,17 @@ Resources:
       Tags:
         - Key: Name
           Value: AnsibleSSHSecurityGroup
+
+  AnsibleVaultSecret: 
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: ansible-vault-password
+      Description: Password for Ansible vault
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"password": "${AnsibleVaultPassword}"}'
+        GenerateStringKey: password
+        PasswordLength: 30
+        ExcludeCharacters: '"@/\'
 
   AnsibleNodeRole:
     Type: AWS::IAM::Role
@@ -215,6 +231,32 @@ Resources:
                 mode: "000750"
                 owner: ec2-user
                 group: ec2-user
+              /home/ec2-user/scripts/ansible_vault_setup:
+                content: !Sub |
+                  #!/bin/bash
+                  jmetercontroller_instanceid=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=JmeterControllerNode" --query "Reservations[].Instances[].[InstanceId]" --output text)
+
+                  jmetercontroller_password=$(aws ec2 get-password-data --instance-id ${jmetercontroller_instanceid} --priv-launch-key ~/.ssh/ssh_key.pem | jq -r '.PasswordData')
+                  
+                  vault_password=$(aws secretsmanager get-secret-value --secret-id ansible-vault-password --query SecretString --output text | jq -r .password)
+                  
+                  secrets_file="~/.credentials/secrets.yml"
+                  vault_password_file="~/.vault/vault_password_file"
+                  
+                  echo "$vault_password" > ${vault_password_file}
+                  
+                  # Create a temporary file to store the secret
+                  temp_file=$(mktemp)
+                  echo "jmetercontroller_admin_pwd: ${jmetercontroller_password}" > "$temp_file"
+                  
+                  # Encrypt the temporary file using Ansible Vault with the provided password
+                  ansible-vault encrypt --vault-password-file $vault_password_file "$temp_file" --output "$secrets_file"
+                  
+                  # Remove the temporary file
+                  rm "$temp_file"
+                mode: "000750"
+                owner: ec2-user
+                group: ec2-user                  
           services:
               cfn-hup:
                 enabled: 'true'
@@ -244,6 +286,9 @@ Resources:
               ignoreErrors: true 
             06_get_sshkey:
               command: sudo -u ec2-user /home/ec2-user/scripts/get-ssh-key
+              ignoreErrors: true
+            07_ansible_vault:
+              command: sudo -u ec2-user /home/ec2-user/scripts/ansible_vault_setup
               ignoreErrors: true
     Properties:
       UserData: !Base64 

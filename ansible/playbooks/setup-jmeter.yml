@@ -1,1 +1,7 @@
-- hosts: 
+- hosts: tag_Name_JmeterControllerNode
+  roles:
+    - { role: jmeter, node_type: "JmeterController" }
+
+- hosts: tag_Name_JmeterWorkerNodeGroup
+  roles:
+    - { role: jmeter, node_type: "JmeterWorker" }

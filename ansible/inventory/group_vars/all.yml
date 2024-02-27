@@ -1,0 +1,1 @@
+jmeter_secrets: "{{ lookup('yamlfile', '~/.credentials/secrets.yml', vault_password_file='~/.vault/vault_password_file') }}"

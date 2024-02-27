@@ -1,4 +1,4 @@
-- hosts: jmeterworker
+- hosts: tag_Name_JmeterWorkerNodeGroup
   become: true
   tasks:
     - name: Check ProcessID of running jmeter-server
