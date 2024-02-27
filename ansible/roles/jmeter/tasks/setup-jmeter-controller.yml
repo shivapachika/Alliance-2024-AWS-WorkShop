@@ -1,0 +1,132 @@
+- name: Mkdir for temp folder
+  win_file:
+    path: '{{ win_java_tmp_folder }}'
+    state: directory
+
+- name: Mkdir for java installation
+  win_file:
+    path: '{{ win_java_folder }}'
+    state: directory
+
+- name: Download {{ win_java_package }}
+  win_get_url:
+    url: '{{ win_java_binaries_url }}'
+    dest: '{{ win_java_tmp_folder }}'
+
+- name: Install java {{ java_full_version }}
+  win_unzip:
+    src: '{{ win_java_tmp_folder }}/{{ win_java_package }}'
+    dest: '{{ win_java_folder }}'
+    creates: '{{ win_java_folder }}\bin'
+
+- name: Make dirs for jmeter
+  win_file:
+    path: '{{ win_jmeter_path }}'
+    state: directory
+
+- name: Make dirs for jmeter report path
+  win_file:
+    path: '{{ win_jmeter_report_path }}'
+    state: directory
+
+- name: Make dirs for jmeter scripts path
+  win_file:
+    path: '{{ win_jmeter_scripts_path }}'
+    state: directory
+
+- name: Make dirs for jmeter results path
+  win_file:
+    path: '{{ win_jmeter_results_path }}'
+    state: directory
+
+- name: Make dirs for jmeter logs
+  win_file:
+    path: '{{ win_jmeter_logs }}'
+    state: directory
+
+- name: Make dirs for jmeter userdata
+  win_file:
+    path: '{{ win_jmeter_userdata }}'
+    state: directory
+
+- name: Make dirs for jmeter workerdata
+  win_file:
+    path: '{{ win_jmeter_workerdata }}'
+    state: directory
+
+- name: Make dirs for jmeter plugins
+  win_file:
+    path: '{{ win_jmeter_plugins }}'
+    state: directory
+
+- name: Download apache-jmeter-{{ jmeter_version }}.zip
+  win_get_url:
+    url: '{{ win_jmeter_binaries_url }}'
+    dest: '{{ win_jmeter_tmp_folder }}\{{ win_jmeter_package }}'
+
+- name: Install apache-jmeter-{{ jmeter_version }}
+  win_unzip:
+    src: '{{ win_jmeter_tmp_folder }}\{{ win_jmeter_package }}'
+    dest: '{{ win_jmeter_path }}'
+    creates: '{{ win_jmeter_path }}\apache-jmeter-{{ jmeter_version }}\bin'
+
+- name: Set apdex thresholds in jmeter properties
+  win_lineinfile:
+    path: '{{ win_jmeter_config_properties_file }}'
+    regex: '^{{ item.key }}='
+    line: '{{ item.key }}={{ item.value }}'
+  loop: '{{ win_jmeter_apdex_thresholds }}'
+
+- name: Set remote hosts in jmeter properties
+  win_lineinfile:
+    path: '{{ win_jmeter_config_properties_file }}'
+    regex: '^remote_hosts='
+    line: 'remote_hosts={{ win_jmeter_remote_hosts }}'
+
+- name: Set rmi properties in jmeter properties
+  win_lineinfile:
+    path: '{{ win_jmeter_config_properties_file }}'
+    regex: '^#{{ item.key }}='
+    line: '{{ item.key }}={{ item.value }}'
+  loop: '{{ win_jmeter_rmi_properties }}'
+
+- name: Put setenv file
+  win_template:
+    src: templates/setenv.bat.j2
+    dest: '{{ win_jmeter_path }}\apache-jmeter-{{ jmeter_version }}\bin\setenv.bat'
+
+- name: Ensure that system32, Powershell, Jmeter bin, Java bin are in Path
+  win_path:
+    elements: '{{ win_jmeter_path_env }}'
+
+- name: Put run_jmeter batch file
+  win_template:
+    src: templates/jmeter.bat.j2
+    dest: '{{ win_jmeter_path }}\apache-jmeter-{{ jmeter_version }}\bin\run_jmeter.bat'
+
+- name: Create run_jmeter shortcut on desktop
+  win_shortcut:
+    description: Jmeter GUI
+    src: '{{ win_jmeter_path }}\apache-jmeter-{{ jmeter_version }}\bin\run_jmeter.bat'
+    dest: '%Public%\Desktop\Jmeter.lnk'
+    directory: '{{ win_jmeter_scripts_path }}'
+
+- name: Copy pem file to workerdata
+  win_copy:
+    src: "{{ lookup('env','HOME') }}/aws-ansible/aws-jmeter-worker.pem"
+    dest: "{{ win_jmeter_workerdata }}/aws-jmeter-worker.pem"
+
+- name: Copy script to workerdata
+  win_copy:
+    src: 'files/copy_data_files.sh'
+    dest: "{{ win_jmeter_workerdata }}/copy_data_files.sh"
+
+- name: Inbound Firewall rule to allow Jmeter port range
+  win_firewall_rule:
+    name: Sample port range
+    localport: 35750-35760
+    action: allow
+    direction: in
+    protocol: tcp
+    state: present
+    enabled: yes

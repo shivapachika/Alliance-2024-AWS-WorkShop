@@ -16,7 +16,7 @@ Metadata:
           default: Bastion host provisioning
         Parameters:
           - AdminPassword
-          - SourceCidrForRDP
+          - SourceCidrForBastion
       - Label:
           default: Network setup
         Parameters:
@@ -29,6 +29,7 @@ Metadata:
         Parameters:
           - EC2ModelAnsible
           - KeyPairName
+          - AnsibleVaultPassword
       - Label:
           default: Jmeter nodes
         Parameters:
@@ -125,6 +126,11 @@ Parameters:
     Default: 0.0.0.0/0
     AllowedPattern: '^([0-9]+\.){3}[0-9]+\/[0-9]+$'
 
+  AnsibleVaultPassword:
+    Type: String 
+    Description: Password for Ansible vault
+    NoEcho: true
+
 #Resources
 Resources:
   VPCStack:
@@ -156,33 +162,10 @@ Resources:
           - VPCStack
           - Outputs.BastionSecurityGroup
 
-  AnsibleStack:
-    DependsOn: 
-      - VPCStack
-      - BastionStack
-    Type: 'AWS::CloudFormation::Stack'
-    Properties:
-      TemplateURL: !Sub https://${CfnS3Bucket}.s3.amazonaws.com/${CfnS3Path}/Ansible-Controller.yaml
-      Parameters:
-        AnsibleInstanceType: !Ref EC2ModelAnsible
-        SourceCidrForSSH: !GetAtt
-          - BastionStack
-          - Outputs.BastionPrivateIp
-        AnsibleVPC: !GetAtt 
-          - VPCStack
-          - Outputs.VPC
-        AnsiblePrivateSubnet: !GetAtt 
-          - VPCStack
-          - Outputs.ToolsPrivateSubnet
-        AnsibleKeyPair: !GetAtt 
-          - VPCStack
-          - Outputs.SSHKeyName
-
   JmeterStack:
     DependsOn:
       - VPCStack
       - BastionStack
-      - AnsibleStack
     Type: 'AWS::CloudFormation::Stack'
     Properties:
       TemplateURL: !Sub https://${CfnS3Bucket}.s3.amazonaws.com/${CfnS3Path}/Jmeter-Stack.yaml
@@ -208,6 +191,29 @@ Resources:
           - AnsibleStack
           - Outputs.AnsiblePrivateIpCIDR
 
+  AnsibleStack:
+    DependsOn: 
+      - VPCStack
+      - BastionStack
+    Type: 'AWS::CloudFormation::Stack'
+    Properties:
+      TemplateURL: !Sub https://${CfnS3Bucket}.s3.amazonaws.com/${CfnS3Path}/Ansible-Controller.yaml
+      Parameters:
+        AnsibleInstanceType: !Ref EC2ModelAnsible
+        SourceCidrForSSH: !GetAtt
+          - BastionStack
+          - Outputs.BastionPrivateIp
+        AnsibleVPC: !GetAtt 
+          - VPCStack
+          - Outputs.VPC
+        AnsiblePrivateSubnet: !GetAtt 
+          - VPCStack
+          - Outputs.ToolsPrivateSubnet
+        AnsibleKeyPair: !GetAtt 
+          - VPCStack
+          - Outputs.SSHKeyName
+        AnsibleVaultPassword: !Ref AnsibleVaultPassword
+
 #Outputs
 Outputs:
   AWSAccountId:
@@ -221,6 +227,3 @@ Outputs:
   JmeterControlNodeIP:
     Description: Jmeter controller node IP.
     Value: !GetAtt 'JmeterStack.Outputs.JmeterControllerNodePrivateIp'
-  JmeterWorkerNodeIPs:
-    Description: Jmeter worker node IPs.
-    Value: !GetAtt 'JmeterStack.Outputs.JmeterWorkerNodePrivateIps'

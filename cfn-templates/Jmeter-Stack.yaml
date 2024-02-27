@@ -118,6 +118,52 @@ Resources:
         - Key: Name
           Value: JmeterSecurityGroup
 
+#create iam role, policy, instanceprofile
+  JmeterWorkerNodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: JmeterWorkerNodeRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: JmeterWorkerNodePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - autoscaling:DescribeAutoScalingGroups
+                  - autoscaling:DescribeAutoScalingInstances
+                  - autoscaling:DescribeLaunchConfigurations
+                  - autoscaling:DescribeLaunchTemplates
+                  - autoscaling:DescribeLaunchTemplateVersions
+                  - autoscaling:CreateLaunchConfiguration
+                  - autoscaling:CreateOrUpdateTags
+                  - autoscaling:DescribeTags
+                  - autoscaling:UpdateAutoScalingGroup
+                  - autoscaling:CreateAutoScalingGroup
+                  - autoscaling:DeleteAutoScalingGroup
+                  - autoscaling:SetDesiredCapacity
+                  - autoscaling:TerminateInstanceInAutoScalingGroup
+                Resource: '*'
+              - Effect: Allow
+                Action: ssm:*
+                Resource: '*' 
+              - Effect: Allow
+                Action: ec2:*
+                Resource: '*'
+
+  JmeterWorkerNodeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /jmeter/workers/
+      Roles: [!Ref JmeterWorkerNodeRole]
+
   JmeterWindows:
     Type: AWS::EC2::Instance
     Metadata:
@@ -216,7 +262,6 @@ Resources:
               - </script>
       InstanceType:
         Ref: JmeterControllerInstanceType
-#      IamInstanceProfile: !Ref EC2InstanceIAMProfileName
       KeyName:
         Ref: JmeterKeyPair
       ImageId:
@@ -230,40 +275,43 @@ Resources:
         - Key: Name
           Value: JmeterControllerNode
 
+  JmeterWorkerNodeLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: JmeterWorkerNodeLaunchTemplate
+      VersionDescription: Initial version
+      LaunchTemplateData:
+        InstanceType: !Ref JmeterWorkerInstanceType
+        KeyName: !Ref JmeterKeyPair
+        IamInstanceProfile:
+          Arn: !GetAtt JmeterWorkerNodeInstanceProfile.Arn
+        ImageId: !FindInMap 
+          - RegionMap
+          - !Ref 'AWS::Region'
+          - AmazonLinux2023AMI
+        SecurityGroupIds: 
+          - !Ref JmeterSecurityGroup
+
   # Jmeter worker node config
   JmeterWorkerNodeGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       DesiredCapacity: !Ref JmeterWorkerNodeMin
-      LaunchConfigurationName: !Ref JmeterWorkerNodeLaunchConfig
+      LaunchTemplate:
+        LaunchTemplateId: !Ref JmeterWorkerNodeLaunchTemplate
+        Version: !GetAtt JmeterWorkerNodeLaunchTemplate.LatestVersionNumber
       MinSize: !Ref JmeterWorkerNodeMin
       MaxSize: !Ref JmeterWorkerNodeMax
-      VPCZoneIdentifier: !Ref JmeterPrivateSubnet
+      VPCZoneIdentifier: 
+        - !Ref JmeterPrivateSubnet
       Tags:
         - Key: Name
           Value: JmeterWorkerNodeGroup
           PropagateAtLaunch: true
-
-  JmeterWorkerNodeLaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
-    Properties:
-      AssociatePublicIpAddress: false
-      InstanceType: !Ref JmeterWorkerInstanceType
-      KeyName: !Ref JmeterKeyPair
-      ImageId: !FindInMap 
-        - RegionMap
-        - !Ref 'AWS::Region'
-        - AmazonLinux2023AMI
-      SecurityGroups: !Ref JmeterSecurityGroup
-      Tags:
-        - Key: Name
-          Value: JmeterWorkerLinuxNode
-
+      HealthCheckType: EC2
+      HealthCheckGracePeriod: 300
 
 Outputs:
   JmeterControllerNodePrivateIp:
     Description: The Private IP of the Jmeter Controller Node within the VPC
     Value: !GetAtt JmeterWindows.PrivateIp
-  JmeterWorkerNodePrivateIps:
-    Description: The Private IPs of the Jmeter Worker Nodes within the VPC
-    Value: !GetAtt JmeterWorkerNodeGroup.PrivateIpAddresses
