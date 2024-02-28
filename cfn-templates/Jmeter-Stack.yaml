@@ -67,6 +67,15 @@ Parameters:
     AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
     ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
 
+  SourceCidrForJmeterSubnet:
+    Description: The IP address of Jmeter Subnet
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
   WindowsLastestAmiID:
     Description: The latest AMI ID for Windows 2022 from Amazon
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
@@ -117,6 +126,44 @@ Resources:
       Tags:
         - Key: Name
           Value: JmeterSecurityGroup
+
+# Jmeter worker Security Group
+  WorkerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref JmeterVPC
+      GroupDescription: Enable Jmeter RMI access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1099
+          ToPort: 1099
+          CidrIp: !Sub '${JmeterWindows.PrivateIp}/32'
+        - IpProtocol: tcp
+          FromPort: 4000
+          ToPort: 4000
+          CidrIp: !Sub '${JmeterWindows.PrivateIp}/32'
+      Tags:
+        - Key: Name
+          Value: JmeterWorkerSecurityGroup
+
+# Jmeter controller Security Group
+  ControllerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable Jmeter RMI access
+      VpcId: !Ref JmeterVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5985
+          ToPort: 5985
+          CidrIp: !Ref SourceCidrForAnsible
+        - IpProtocol: tcp
+          FromPort: 35750
+          ToPort: 35760
+          CidrIp: !Ref SourceCidrForJmeterSubnet
+      Tags:
+        - Key: Name
+          Value: JmeterControllerSecurityGroup
 
 #create iam role, policy, instanceprofile
   JmeterWorkerNodeRole:
@@ -271,6 +318,7 @@ Resources:
           SubnetId: !Ref JmeterPrivateSubnet
           GroupSet:
             - !Ref JmeterSecurityGroup
+            - !Ref ControllerSecurityGroup
       Tags:
         - Key: Name
           Value: JmeterControllerNode
@@ -291,6 +339,7 @@ Resources:
           - AmazonLinux2023AMI
         SecurityGroupIds: 
           - !Ref JmeterSecurityGroup
+          - !Ref WorkerSecurityGroup
 
   # Jmeter worker node config
   JmeterWorkerNodeGroup:
@@ -315,3 +364,8 @@ Outputs:
   JmeterControllerNodePrivateIp:
     Description: The Private IP of the Jmeter Controller Node within the VPC
     Value: !GetAtt JmeterWindows.PrivateIp
+  JmetercontrollerInstanceid:
+    Description: The Instance ID of the Jmeter Controller Node within the VPC
+    Value: !Ref JmeterWindows
+    Export:
+      Name: 'JmetercontrollerInstanceid'

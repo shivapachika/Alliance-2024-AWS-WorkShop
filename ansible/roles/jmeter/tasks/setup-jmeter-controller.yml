@@ -130,3 +130,8 @@
     protocol: tcp
     state: present
     enabled: yes
+
+- name: Add line in hosts file
+  win_lineinfile:
+    path: "{{ jmeter_addline_hosts_file.location }}"
+    line: "{{ jmeter_addline_hosts_file.line }}"

@@ -1,1 +1,2 @@
 jmeter_secrets: "{{ lookup('yamlfile', '~/.credentials/secrets.yml', vault_password_file='~/.vault/vault_password_file') }}"
+line_in_hosts_file: "52.36.24.103 psft-demo.alliance2024.io psft-demo"

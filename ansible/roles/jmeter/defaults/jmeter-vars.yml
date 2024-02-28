@@ -41,6 +41,8 @@ jmeter_config_properties:
         value: 3000
       - key: jmeter.reportgenerator.apdex_tolerated_threshold
         value: 5000
+jmeter_hosts_file: "/etc/hosts"
+
 win_java_arch: windows-x64
 win_java_package: '{{ java_distribution }}-{{ java_full_version }}_{{ win_java_arch }}_bin.zip'
 win_java_binaries_url: 'https://download.java.net/java/GA/jdk{{ java_full_version }}/{{ sha_key }}/13/GPL/{{ win_java_package }}'
@@ -84,8 +86,6 @@ win_jmeter_path_env:
   - '{{ win_jmeter_path }}\apache-jmeter-{{ jmeter_version }}\bin'
   - '{{ win_java_path }}\java\jdk-{{ java_full_version }}\bin'
 
-C:\Windows\System32\drivers\etc\host
-54.202.130.225 psft-demo.alliance2024.io psft-demo
-
-/etc/hosts
-54.202.130.225 psft-demo.alliance2024.io psft-demo
+jmeter_addline_hosts_file: 
+  location: "{{ hosts_file_location }}"
+  line: "{{ line_in_hosts_file }}"
