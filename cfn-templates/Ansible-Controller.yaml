@@ -66,9 +66,9 @@ Parameters:
 Mappings:
   RegionMap:
     us-east-1:
-      AmazonLinux2023AMI: ami-0a3c3a20c09d6f377
+      AmazonLinux2023AMI: ami-0440d3b780d96b29d
     us-west-2:
-      AmazonLinux2023AMI: ami-040f9e8ab2841a9b3
+      AmazonLinux2023AMI: ami-052c9ea013e6e3567
 
 Resources:
 #create security groups

@@ -83,3 +83,7 @@ win_jmeter_path_env:
   - C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps
   - '{{ win_jmeter_path }}\apache-jmeter-{{ jmeter_version }}\bin'
   - '{{ win_java_path }}\java\jdk-{{ java_full_version }}\bin'
+
+jmeter_addline_hosts_file: 
+  location: "{{ hosts_file_location }}"
+  line: "{{ line_in_hosts_file }}"

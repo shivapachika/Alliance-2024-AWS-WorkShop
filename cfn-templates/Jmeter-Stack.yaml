@@ -95,7 +95,7 @@ Parameters:
 Mappings:
   RegionMap:
     us-east-1:
-      AmazonLinux2023AMI: ami-08a52ddb321b32a8c
+      AmazonLinux2023AMI: ami-0440d3b780d96b29d
     us-west-2:
       AmazonLinux2023AMI: ami-052c9ea013e6e3567
 

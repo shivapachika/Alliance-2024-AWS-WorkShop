@@ -111,15 +111,10 @@
     dest: '%Public%\Desktop\Jmeter.lnk'
     directory: '{{ win_jmeter_scripts_path }}'
 
-- name: Copy pem file to workerdata
+- name: Copy userdata to userdata
   win_copy:
-    src: "{{ lookup('env','HOME') }}/aws-ansible/aws-jmeter-worker.pem"
-    dest: "{{ win_jmeter_workerdata }}/aws-jmeter-worker.pem"
-
-- name: Copy script to workerdata
-  win_copy:
-    src: 'files/copy_data_files.sh'
-    dest: "{{ win_jmeter_workerdata }}/copy_data_files.sh"
+    src: 'files/jmeter-userdata/local-pswd.txt'
+    dest: "{{ win_jmeter_userdata }}/local-pswd.txt"
 
 - name: Inbound Firewall rule to allow Jmeter port range
   win_firewall_rule:

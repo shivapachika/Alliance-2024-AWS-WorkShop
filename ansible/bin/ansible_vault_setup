@@ -17,7 +17,7 @@ echo "${VAULT_PASSWORD}" > "${VAULT_PASSWORD_FILE}"
 # Create a temporary file to store the secret
 TEMP_FILE=$(mktemp)
 
-echo "jmetercontroller_admin_pwd: ${JMETERCONTROLLER_PASSWORD}" > "${TEMP_FILE}"
+echo "jmetercontroller_admin_pwd: \"${JMETERCONTROLLER_PASSWORD}\"" > "${TEMP_FILE}"
 
 # Encrypt the temporary file using Ansible Vault with the provided password
 ansible-vault encrypt --vault-password-file "${VAULT_PASSWORD_FILE}" "${TEMP_FILE}" --output "${SECRETS_FILE}"

@@ -143,6 +143,21 @@
     regexp: '^#(RMI_HOST_DEF=-Djava[.]rmi[.]server[.]hostname=).*'
     replace: '\g<1>{{ ipAddr }}'
 
+- name: Copy local-pswd to userdata
+  copy:
+    src: 'files/jmeter-userdata/local-pswd.txt'
+    dest: "{{ jmeter_userdata }}/local-pswd.txt"
+
+- name: Copy local-users to userdata
+  copy:
+    src: 'files/jmeter-userdata/local-pswd.txt'
+    dest: "{{ jmeter_userdata }}/local-pswd.txt"
+
+- name: Add line in hosts file
+  lineinfile:
+    path: "{{ jmeter_addline_hosts_file.location }}"
+    line: "{{ jmeter_addline_hosts_file.line }}"
+
 - name: Start jmeter-server
   shell: |
     source /etc/profile.d/jmeter.sh
@@ -164,8 +179,3 @@
   debug:
     msg: "{{ outputlog['content'] | b64decode | split('\n') }}"
   tags: start
-
-- name: Add line in hosts file
-  lineinfile:
-    path: "{{ jmeter_addline_hosts_file.location }}"
-    line: "{{ jmeter_addline_hosts_file.line }}"

@@ -19,7 +19,7 @@ Parameters:
       - t3.medium
       - t3.small
       - t3.large
-    Default: t3.small
+    Default: t3.medium
 
   VPC:
     Description: VPC to place Bastion Host.
