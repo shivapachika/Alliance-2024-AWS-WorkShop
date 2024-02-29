@@ -111,20 +111,25 @@
     dest: '%Public%\Desktop\Jmeter.lnk'
     directory: '{{ win_jmeter_scripts_path }}'
 
-- name: Copy userdata to userdata
+- name: Copy localpswd to userdata
   win_copy:
     src: 'files/jmeter-userdata/local-pswd.txt'
-    dest: "{{ win_jmeter_userdata }}\local-pswd.txt"
+    dest: "{{ win_jmeter_userdata }}\\local-pswd.txt"
 
-- name: Copy userdata to userdata
+- name: Copy localusers to userdata
   win_copy:
     src: 'files/jmeter-userdata/local-users.txt'
-    dest: "{{ win_jmeter_userdata }}\local-users.txt"
+    dest: "{{ win_jmeter_userdata }}\\local-users.txt"
 
 - name: Copy jmeterscripts to jmeterscripts
   win_copy:
     src: 'files/jmeter-scripts/update_profile.jmx'
-    dest: "{{ win_jmeter_scripts_path }}\update_profile.jmx"
+    dest: "{{ win_jmeter_scripts_path }}\\update_profile.jmx"
+
+- name: Copy jmeterreport generate to workerdata
+  win_copy:
+    src: 'files/jmeter-scripts/generate-jmeter-output.bat'
+    dest: "{{ win_jmeter_workerdata }}\\generate-jmeter-output.bat"
 
 - name: Inbound Firewall rule to allow Jmeter port range
   win_firewall_rule:
@@ -140,3 +145,13 @@
   win_lineinfile:
     path: "{{ jmeter_addline_hosts_file.location }}"
     line: "{{ jmeter_addline_hosts_file.line }}"
+
+- name: Create target access url desktop shortcut
+  win_shell: |
+    $url = "{{ win_jmeter_target_access_url }}"
+    $shortcutPath = "$env:USERPROFILE\Desktop\MicrosoftEdge.lnk"
+    $WshShell = New-Object -ComObject WScript.Shell
+    $Shortcut = $WshShell.CreateShortcut($shortcutPath)
+    $Shortcut.TargetPath = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+    $Shortcut.Arguments = $url
+    $Shortcut.Save()

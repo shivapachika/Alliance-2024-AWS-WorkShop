@@ -149,22 +149,22 @@
     dest: "{{ jmeter_userdata }}/local-pswd.txt"
 
 - name: Copy local-usersa to node1
-  copy:
+  synchronize:
     src: 'files/jmeter-userdata/local-usersa.txt'
     dest: "{{ jmeter_userdata }}/local-users.txt"
-  when: ansible_play_hosts.index(inventory_hostname) == 0
+  when: inventory_hostname == win_jmeter_remote_hosts_group[0]
 
 - name: Copy local-usersb to node2
-  copy:
+  synchronize:
     src: 'files/jmeter-userdata/local-usersb.txt'
     dest: "{{ jmeter_userdata }}/local-users.txt"
-  when: ansible_play_hosts.index(inventory_hostname) == 1
+  when: inventory_hostname == win_jmeter_remote_hosts_group[1]
 
 - name: Copy local-usersc to node3
-  copy:
+  synchronize:
     src: 'files/jmeter-userdata/local-usersc.txt'
     dest: "{{ jmeter_userdata }}/local-users.txt"
-  when: ansible_play_hosts.index(inventory_hostname) == 2
+  when: inventory_hostname == win_jmeter_remote_hosts_group[2]
 
 - name: Add line in hosts file
   lineinfile:
