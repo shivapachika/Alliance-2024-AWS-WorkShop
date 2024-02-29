@@ -246,8 +246,10 @@ Resources:
             'c:\cfn\scripts\getawsec2ssh.ps1':
               content: !Sub |
                     # Get the path to the PEM file
-                    $AWS_REGION = "us-east-1"
+                    $AWS_REGION = 'us-west-2'
+
                     $KEY_NAME = "EC2KeyPair"
+
                     $env:Path += ";C:\Program Files\Amazon\AWSCLIV2"
 
                     $KEY_PAIR_ID_COMMAND = "aws ec2 describe-key-pairs  --region `"$AWS_REGION`" --query `"KeyPairs[?KeyName=='$KEY_NAME'].KeyPairId`" --output text"

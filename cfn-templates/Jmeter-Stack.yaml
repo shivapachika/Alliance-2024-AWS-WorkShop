@@ -255,6 +255,7 @@ Resources:
                     winrm quickconfig -quiet
                     Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true
                     Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $true
+                    New-NetFirewallRule -DisplayName "Allow WinRm from Ansible Control Machine" -Group "Windows Remote Management" -Profile "Public" -Direction Inbound -Action Allow -RemoteAddress 10.0.2.0/24 -Protocol TCP -LocalPort 5985;
 
             c:\temp\gitsilentinstall-defaults.txt:
               content: !Join
