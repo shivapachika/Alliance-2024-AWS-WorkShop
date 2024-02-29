@@ -116,6 +116,11 @@
     src: 'files/jmeter-userdata/local-pswd.txt'
     dest: "{{ win_jmeter_userdata }}\local-pswd.txt"
 
+- name: Copy userdata to userdata
+  win_copy:
+    src: 'files/jmeter-userdata/local-users.txt'
+    dest: "{{ win_jmeter_userdata }}\local-users.txt"
+
 - name: Copy jmeterscripts to jmeterscripts
   win_copy:
     src: 'files/jmeter-scripts/update_profile.jmx'
