@@ -143,6 +143,34 @@
     regexp: '^#(RMI_HOST_DEF=-Djava[.]rmi[.]server[.]hostname=).*'
     replace: '\g<1>{{ ipAddr }}'
 
+- name: Copy local-pswd to userdata
+  copy:
+    src: 'files/jmeter-userdata/local-pswd.txt'
+    dest: "{{ jmeter_userdata }}/local-pswd.txt"
+
+- name: Copy local-usersa to node1
+  copy:
+    src: 'files/jmeter-userdata/local-usersa.txt'
+    dest: "{{ jmeter_userdata }}/local-users.txt"
+  when: ansible_play_hosts.index(inventory_hostname) == 0
+
+- name: Copy local-usersb to node2
+  copy:
+    src: 'files/jmeter-userdata/local-usersb.txt'
+    dest: "{{ jmeter_userdata }}/local-users.txt"
+  when: ansible_play_hosts.index(inventory_hostname) == 1
+
+- name: Copy local-usersc to node3
+  copy:
+    src: 'files/jmeter-userdata/local-usersc.txt'
+    dest: "{{ jmeter_userdata }}/local-users.txt"
+  when: ansible_play_hosts.index(inventory_hostname) == 2
+
+- name: Add line in hosts file
+  lineinfile:
+    path: "{{ jmeter_addline_hosts_file.location }}"
+    line: "{{ jmeter_addline_hosts_file.line }}"
+
 - name: Start jmeter-server
   shell: |
     source /etc/profile.d/jmeter.sh

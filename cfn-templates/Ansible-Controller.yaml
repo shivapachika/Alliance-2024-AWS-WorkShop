@@ -28,6 +28,16 @@ Parameters:
     Description: Name of the existing Key Pair for EC2 instances
     Default: EC2KeyPair
 
+  JmetercontrollerInstanceid:
+    Type: String
+    Description: InstanceId of the JmetercontrollerInstanceid
+    Default: 'a-123456'
+
+  AnsibleVaultPasswordId:
+    Type: String
+    Description: AnsibleVaultPasswordId
+    Default: 'ansible-vault-password'
+
   SourceCidrForSSH:
     Description: The IP address that can be used to SSH to the EC2 instances
     Type: String
@@ -56,9 +66,9 @@ Parameters:
 Mappings:
   RegionMap:
     us-east-1:
-      AmazonLinux2023AMI: ami-0a3c3a20c09d6f377
+      AmazonLinux2023AMI: ami-0440d3b780d96b29d
     us-west-2:
-      AmazonLinux2023AMI: ami-040f9e8ab2841a9b3
+      AmazonLinux2023AMI: ami-052c9ea013e6e3567
 
 Resources:
 #create security groups
@@ -83,7 +93,7 @@ Resources:
   AnsibleVaultSecret: 
     Type: AWS::SecretsManager::Secret
     Properties:
-      Name: ansible-vault-password
+      Name: !Ref AnsibleVaultPasswordId
       Description: Password for Ansible vault
       GenerateSecretString:
         SecretStringTemplate: !Sub '{"password": "${AnsibleVaultPassword}"}'
@@ -165,6 +175,7 @@ Resources:
                 mode: '000400'
                 owner: root
                 group: root
+
               /etc/cfn/hooks.d/cfn-auto-reloader.conf:
                 content: !Join 
                   - ''
@@ -184,7 +195,22 @@ Resources:
                     - |+
 
                     - |
-                      runas=root     
+                      runas=root
+
+              /home/ec2-user/scripts/ansible_vault_env:
+                mode: "000600"
+                owner: ec2-user
+                group: ec2-user
+                content:
+                  !Join
+                    - "\n"
+                    -
+                      - SECRETS_FILE="/home/ec2-user/.credentials/secrets.yml"
+                      - VAULT_PASSWORD_FILE="/home/ec2-user/.vault/vault_password_file"
+                      - !Sub ["AWS_REGION=${aws_region}", aws_region: !Ref "AWS::Region"]
+                      - !Sub ["JC_INSTANCE=${JmetercontrollerInstanceid}", JmetercontrollerInstanceid: !Ref JmetercontrollerInstanceid]
+                      - !Sub ["ANS_VAULT_PWD=${AnsibleVaultPasswordId}", AnsibleVaultPasswordId: !Ref AnsibleVaultPasswordId]
+
               /opt/awscli/scripts/install-aws-cli:
                 content: !Sub |
                   #!/bin/bash
@@ -196,6 +222,7 @@ Resources:
                 mode: "000750"
                 owner: root
                 group: root
+
               /home/ec2-user/scripts/get-ssh-key:
                 content: !Sub |
                   #!/bin/bash
@@ -222,6 +249,7 @@ Resources:
                 mode: "000750"
                 owner: ec2-user
                 group: ec2-user
+
               /home/ec2-user/scripts/clone_deployment_repo:
                 content: !Sub |
                   #!/bin/bash
@@ -231,32 +259,7 @@ Resources:
                 mode: "000750"
                 owner: ec2-user
                 group: ec2-user
-              /home/ec2-user/scripts/ansible_vault_setup:
-                content: !Sub |
-                  #!/bin/bash
-                  jmetercontroller_instanceid=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=JmeterControllerNode" --query "Reservations[].Instances[].[InstanceId]" --output text)
 
-                  jmetercontroller_password=$(aws ec2 get-password-data --instance-id ${jmetercontroller_instanceid} --priv-launch-key ~/.ssh/ssh_key.pem | jq -r '.PasswordData')
-                  
-                  vault_password=$(aws secretsmanager get-secret-value --secret-id ansible-vault-password --query SecretString --output text | jq -r .password)
-                  
-                  secrets_file="~/.credentials/secrets.yml"
-                  vault_password_file="~/.vault/vault_password_file"
-                  
-                  echo "$vault_password" > ${vault_password_file}
-                  
-                  # Create a temporary file to store the secret
-                  temp_file=$(mktemp)
-                  echo "jmetercontroller_admin_pwd: ${jmetercontroller_password}" > "$temp_file"
-                  
-                  # Encrypt the temporary file using Ansible Vault with the provided password
-                  ansible-vault encrypt --vault-password-file $vault_password_file "$temp_file" --output "$secrets_file"
-                  
-                  # Remove the temporary file
-                  rm "$temp_file"
-                mode: "000750"
-                owner: ec2-user
-                group: ec2-user                  
           services:
               cfn-hup:
                 enabled: 'true'
@@ -287,8 +290,8 @@ Resources:
             06_get_sshkey:
               command: sudo -u ec2-user /home/ec2-user/scripts/get-ssh-key
               ignoreErrors: true
-            07_ansible_vault:
-              command: sudo -u ec2-user /home/ec2-user/scripts/ansible_vault_setup
+            09_run_ans_vault_setup:
+              command: sudo -u ec2-user bash -c 'cd /home/ec2-user/Alliance-2024-AWS-WorkShop/ansible && ./bin/ansible_vault_setup > /var/log/ansible-vault-setup.log 2>&1'
               ignoreErrors: true
     Properties:
       UserData: !Base64 
@@ -339,8 +342,3 @@ Outputs:
   AnsibleNodePrivateIp:
     Description: The Private IP Address of the Ansible Node within the VPC
     Value: !GetAtt AnsibleLinux.PrivateIp
-  AnsiblePrivateIpCIDR:
-    Description: The Private IP CIDR of the Ansible Node within the VPC
-    Value: !Join [/, [!GetAtt AnsibleLinux.PrivateIp, '32']]
-    Export:
-      Name: 'AnsiblePrivateIpCIDR'

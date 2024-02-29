@@ -23,7 +23,7 @@ jmeter_path: '{{ jmeter_root_path }}/apache-jmeter-{{ jmeter_version }}'
 jmeter_logs: '{{ jmeter_root_path }}/apache-jmeter-{{ jmeter_version }}/logs'
 jmeter_userdata: '{{ jmeter_root_path }}/userdata'
 jmeter_plugins: '{{ jmeter_root_path }}/plugins'
-jmeter_heap_settings: "-Xms2G -Xmx2G -XX:MaxMetaspaceSize=256m"
+jmeter_heap_settings: "-Xms512m -Xmx512m -XX:MaxMetaspaceSize=256m"
 jmeter_config_properties:
   - name: jmeter
     properties:
@@ -59,9 +59,9 @@ win_jmeter_userdata: '{{ win_jmeter_path }}\userdata'
 win_jmeter_workerdata: '{{ win_jmeter_path }}\workerdata'
 win_jmeter_plugins: '{{ win_jmeter_path }}\plugins'
 win_jmeter_logs: '{{ win_jmeter_path }}\apache-jmeter-{{ jmeter_version }}\logs'
-win_jmeter_heap_settings: "-Xms4G -Xmx4G -XX:MaxMetaspaceSize=256m"
+win_jmeter_heap_settings: "-Xms1G -Xmx1G -XX:MaxMetaspaceSize=256m"
 win_jmeter_config_properties_file: '{{ win_jmeter_path }}\apache-jmeter-{{ jmeter_version }}\bin\jmeter.properties'
-win_jmeter_remote_hosts: "{{ groups['jmeterworker'] | join(',') }}"
+win_jmeter_remote_hosts: "{{ groups['tag_Name_JmeterWorkerNodeGroup'] | join(',') }}"
 win_jmeter_apdex_thresholds:
   - key: jmeter.reportgenerator.apdex_satisfied_threshold
     value: 3000
@@ -83,3 +83,7 @@ win_jmeter_path_env:
   - C:\Users\Administrator\AppData\Local\Microsoft\WindowsApps
   - '{{ win_jmeter_path }}\apache-jmeter-{{ jmeter_version }}\bin'
   - '{{ win_java_path }}\java\jdk-{{ java_full_version }}\bin'
+
+jmeter_addline_hosts_file: 
+  location: "{{ hosts_file_location }}"
+  line: "{{ line_in_hosts_file }}"

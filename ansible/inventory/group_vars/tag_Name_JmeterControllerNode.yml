@@ -4,3 +4,7 @@ ansible_connection: winrm
 ansible_winrm_transport: basic
 ansible_winrm_scheme: http
 ansible_port: 5985
+
+node_type: "JmeterController"
+
+hosts_file_location: "C:\\Windows\\System32\\drivers\\etc\\hosts"

@@ -1,1 +1,3 @@
-jmeter_secrets: "{{ lookup('yamlfile', '~/.credentials/secrets.yml', vault_password_file='~/.vault/vault_password_file') }}"
+home_dir: "{{ lookup('env', 'HOME') }}"
+jmeter_secrets: "{{ lookup('ansible.builtin.file', '{{ home_dir }}/.credentials/secrets.yml') | from_yaml }}"
+line_in_hosts_file: "52.36.24.103 psft-demo.alliance2024.io psft-demo"

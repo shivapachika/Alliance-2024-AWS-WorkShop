@@ -1,0 +1,33 @@
+#!/bin/bash
+
+set -e
+
+set -a
+source /home/ec2-user/scripts/ansible_vault_env
+set +a
+
+JMETERCONTROLLER_PASSWORD=$(aws ec2 get-password-data --region "$AWS_REGION" --instance-id "${JC_INSTANCE}" --priv-launch-key ~/.ssh/ssh_key.pem | jq -r '.PasswordData')
+
+VAULT_PASSWORD=$(aws secretsmanager get-secret-value --region "$AWS_REGION" --secret-id "${ANS_VAULT_PWD}" --query SecretString --output text | jq -r .password)
+
+mkdir -p /home/ec2-user/.credentials /home/ec2-user/.vault
+
+echo "${VAULT_PASSWORD}" > "${VAULT_PASSWORD_FILE}"
+
+# Create a temporary file to store the secret
+TEMP_FILE=$(mktemp)
+
+echo "jmetercontroller_admin_pwd: \"${JMETERCONTROLLER_PASSWORD}\"" > "${TEMP_FILE}"
+
+# Encrypt the temporary file using Ansible Vault with the provided password
+ansible-vault encrypt --vault-password-file "${VAULT_PASSWORD_FILE}" "${TEMP_FILE}" --output "${SECRETS_FILE}"
+
+# Remove the temporary file
+rm "${TEMP_FILE}"
+
+# Set correct permissions for files
+chmod 400 "${VAULT_PASSWORD_FILE}" "${SECRETS_FILE}"
+
+echo "export ANSIBLE_VAULT_PASSWORD_FILE=${VAULT_PASSWORD_FILE}" >> ~/.bashrc
+
+echo "Ansible Vault setup completed successfully!"

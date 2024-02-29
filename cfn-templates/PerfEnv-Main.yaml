@@ -128,7 +128,7 @@ Parameters:
 
   AnsibleVaultPassword:
     Type: String 
-    Description: Password for Ansible vault
+    Description: Password for Ansible vault. Use a complex password(Max length 30) and exclude using these characters '"@/\'
     NoEcho: true
 
 #Resources
@@ -187,14 +187,14 @@ Resources:
         JmeterKeyPair: !GetAtt 
           - VPCStack
           - Outputs.SSHKeyName
-        SourceCidrForAnsible: !GetAtt 
-          - AnsibleStack
-          - Outputs.AnsiblePrivateIpCIDR
+        SourceCidrForAnsible: !Ref ToolsSubnet1Param
+        SourceCidrForJmeterSubnet: !Ref AppSubnet1Param
 
   AnsibleStack:
     DependsOn: 
       - VPCStack
       - BastionStack
+      - JmeterStack
     Type: 'AWS::CloudFormation::Stack'
     Properties:
       TemplateURL: !Sub https://${CfnS3Bucket}.s3.amazonaws.com/${CfnS3Path}/Ansible-Controller.yaml
@@ -212,7 +212,11 @@ Resources:
         AnsibleKeyPair: !GetAtt 
           - VPCStack
           - Outputs.SSHKeyName
+        JmetercontrollerInstanceid: !GetAtt 
+          - JmeterStack
+          - Outputs.JmetercontrollerInstanceid
         AnsibleVaultPassword: !Ref AnsibleVaultPassword
+
 
 #Outputs
 Outputs:
