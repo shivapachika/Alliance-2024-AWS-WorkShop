@@ -28,4 +28,6 @@ rm "${TEMP_FILE}"
 # Set correct permissions for files
 chmod 400 "${VAULT_PASSWORD_FILE}" "${SECRETS_FILE}"
 
+echo "export ANSIBLE_VAULT_PASSWORD_FILE=${VAULT_PASSWORD_FILE}" >> ~/.bashrc
+
 echo "Ansible Vault setup completed successfully!"

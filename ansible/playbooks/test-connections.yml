@@ -1,0 +1,4 @@
+- hosts: tag_Name_JmeterControllerNode, tag_Name_JmeterWorkerNodeGroup
+  tasks:
+    - name: test connectivity
+      ping:
