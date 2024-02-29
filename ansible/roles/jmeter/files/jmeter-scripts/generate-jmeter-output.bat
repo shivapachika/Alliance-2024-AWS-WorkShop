@@ -1,0 +1,1 @@
+jmeter -g C:\apps\jmeter\results\2024\03\update-profile-1.jtl -o C:\apps\jmeter\results\2024\03\update-profile-1 & move C:\apps\jmeter\results\2024\03\update-profile-1.jtl C:\apps\jmeter\results\2024\03\update-profile-1
