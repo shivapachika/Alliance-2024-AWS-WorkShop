@@ -97,7 +97,7 @@
         <stringProp name="variableNames">student_uid,empl_id</stringProp>
       </CSVDataSet>
       <hashTree/>
-      <Arguments guiclass="ArgumentsPanel" testclass="Arguments" testname="Restrict-Choice">
+      <Arguments guiclass="ArgumentsPanel" testclass="Arguments" testname="Action-Choice">
         <collectionProp name="Arguments.arguments">
           <elementProp name="clear-all" elementType="Argument">
             <stringProp name="Argument.name">clear-all</stringProp>
