@@ -291,8 +291,7 @@ Resources:
               command: sudo -u ec2-user /home/ec2-user/scripts/get-ssh-key
               ignoreErrors: true
             09_run_ans_vault_setup:
-              command: !Sub |
-                cd /home/ec2-user/Alliance-2024-AWS-WorkShop/ansible && sudo -u ec2-user ./bin/ansible_vault_setup > /var/log/ansible-vault-setup.log 2>&1
+              command: sudo -u ec2-user bash -c 'cd /home/ec2-user/Alliance-2024-AWS-WorkShop/ansible && ./bin/ansible_vault_setup > /var/log/ansible-vault-setup.log 2>&1'
               ignoreErrors: true
     Properties:
       UserData: !Base64 
