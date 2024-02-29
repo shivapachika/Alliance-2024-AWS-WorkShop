@@ -1,4 +1,9 @@
-- hosts: tag_Name_JmeterControllerNode, tag_Name_JmeterWorkerNodeGroup
+- hosts: tag_Name_JmeterControllerNode
+  tasks:
+    - name: test connectivity
+      win_ping:
+
+- hosts: tag_Name_JmeterWorkerNodeGroup
   tasks:
     - name: test connectivity
       ping:
